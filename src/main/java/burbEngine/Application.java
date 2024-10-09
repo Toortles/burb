@@ -58,6 +58,9 @@ public class Application {
     private long textureImageMemory;
     private long textureImageView;
     private long textureSampler;
+    private long depthImage;
+    private long depthImageMemory;
+    private long depthImageView;
     private List<VkCommandBuffer> commandBuffers;
     private List<Long> swapChainImages;
     private List<Long> swapChainImageViews;
@@ -97,16 +100,16 @@ public class Application {
     }
 
     private static class Vertex {
-        private static final int SIZEOF = (2 + 3 +2) * Float.BYTES;
+        private static final int SIZEOF = (3 + 3 + 2) * Float.BYTES;
         private static final int OFFSETOF_POS = 0;
-        private static final int OFFSETOF_COLOR = 2 * Float.BYTES;
-        private static final int OFFSETOF_TEXCOORDS = 5 * Float.BYTES;
+        private static final int OFFSETOF_COLOR = 3 * Float.BYTES;
+        private static final int OFFSETOF_TEXCOORDS = (3 + 3) * Float.BYTES;
 
-        private Vector2fc pos;
+        private Vector3fc pos;
         private Vector3fc color;
         private Vector2fc texCoords;
 
-        public Vertex(Vector2fc pos, Vector3fc color, Vector2fc texCoords) {
+        public Vertex(Vector3fc pos, Vector3fc color, Vector2fc texCoords) {
             this.pos = pos;
             this.color = color;
             this.texCoords = texCoords;
@@ -129,7 +132,7 @@ public class Application {
             VkVertexInputAttributeDescription posDescription = attributeDescriptions.get(0);
             posDescription.binding(0);
             posDescription.location(0);
-            posDescription.format(VK_FORMAT_R32G32_SFLOAT);
+            posDescription.format(VK_FORMAT_R32G32B32_SFLOAT);
             posDescription.offset(OFFSETOF_POS);
 
             // Color
@@ -165,14 +168,20 @@ public class Application {
     }
 
     private static final Vertex[] VERTICES = {
-            new Vertex(new Vector2f(-0.5f, -0.5f), new Vector3f(1.0f, 0.0f, 0.0f), new Vector2f(1.0f, 0.0f)),
-            new Vertex(new Vector2f(0.5f, -0.5f), new Vector3f(0.0f, 1.0f, 0.0f), new Vector2f(0.0f, 0.0f)),
-            new Vertex(new Vector2f(0.5f, 0.5f), new Vector3f(0.0f, 0.0f, 1.0f), new Vector2f(0.0f, 1.0f)),
-            new Vertex(new Vector2f(-0.5f, 0.5f), new Vector3f(1.0f, 1.0f, 1.0f), new Vector2f(1.0f, 1.0f))
+            new Vertex(new Vector3f(-0.5f, -0.5f, 0.0f), new Vector3f(1.0f, 0.0f, 0.0f), new Vector2f(0.0f, 0.0f)),
+            new Vertex(new Vector3f(0.5f, -0.5f, 0.0f), new Vector3f(0.0f, 1.0f, 0.0f), new Vector2f(1.0f, 0.0f)),
+            new Vertex(new Vector3f(0.5f, 0.5f, 0.0f), new Vector3f(0.0f, 0.0f, 1.0f), new Vector2f(1.0f, 1.0f)),
+            new Vertex(new Vector3f(-0.5f, 0.5f, 0.0f), new Vector3f(1.0f, 1.0f, 1.0f), new Vector2f(0.0f, 1.0f)),
+
+            new Vertex(new Vector3f(-0.5f, -0.5f, -0.5f), new Vector3f(1.0f, 0.0f, 0.0f), new Vector2f(0.0f, 0.0f)),
+            new Vertex(new Vector3f(0.5f, -0.5f, -0.5f), new Vector3f(0.0f, 1.0f, 0.0f), new Vector2f(1.0f, 0.0f)),
+            new Vertex(new Vector3f(0.5f, 0.5f, -0.5f), new Vector3f(0.0f, 0.0f, 1.0f), new Vector2f(1.0f, 1.0f)),
+            new Vertex(new Vector3f(-0.5f, 0.5f, -0.5f), new Vector3f(1.0f, 1.0f, 1.0f), new Vector2f(0.0f, 1.0f))
     };
 
     private static final /*uint16_t*/ short[] INDICES = {
-            0, 1, 2, 2, 3, 0
+            0, 1, 2, 2, 3, 0,
+            4, 5, 6, 6, 7, 4
     };
 
     public void run() {
@@ -225,6 +234,10 @@ public class Application {
     }
 
     private void cleanupSwapChain() {
+        vkDestroyImageView(device, depthImageView, null);
+        vkDestroyImage(device, depthImage, null);
+        vkFreeMemory(device, depthImageMemory, null);
+
         uniformBuffers.forEach(ubo -> vkDestroyBuffer(device, ubo, null));
         uniformBuffers.forEach(uboMemory -> vkFreeMemory(device, uboMemory, null));
 
@@ -313,7 +326,7 @@ public class Application {
         }
     }
 
-     private void createUniformBuffers() {
+    private void createUniformBuffers() {
         try (MemoryStack stack = stackPush()) {
             uniformBuffers = new ArrayList<>(swapChainImages.size());
             uniformBuffersMemory = new ArrayList<>(swapChainImages.size());
@@ -487,6 +500,7 @@ public class Application {
         for (Vertex vertex : vertices) {
             buffer.putFloat(vertex.pos.x());
             buffer.putFloat(vertex.pos.y());
+            buffer.putFloat(vertex.pos.z());
 
             buffer.putFloat(vertex.color.x());
             buffer.putFloat(vertex.color.y());
@@ -544,6 +558,7 @@ public class Application {
         createImageViews();
         createRenderPass();
         createGraphicsPipeline();
+        createDepthResources();
         createFramebuffers();
         createUniformBuffers();
         createDescriptorPool();
@@ -997,7 +1012,7 @@ public class Application {
         swapChainImageViews = new ArrayList<>(swapChainImages.size());
 
         for (long swapChainImage : swapChainImages) {
-            swapChainImageViews.add(createImageView(swapChainImage, swapChainImageFormat));
+            swapChainImageViews.add(createImageView(swapChainImage, swapChainImageFormat, VK_IMAGE_ASPECT_COLOR_BIT));
         }
     }
 
@@ -1073,6 +1088,16 @@ public class Application {
             multisampling.sampleShadingEnable(false);
             multisampling.rasterizationSamples(VK_SAMPLE_COUNT_1_BIT);
 
+            VkPipelineDepthStencilStateCreateInfo depthStencil = VkPipelineDepthStencilStateCreateInfo.calloc(stack);
+            depthStencil.sType(VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO);
+            depthStencil.depthTestEnable(true);
+            depthStencil.depthWriteEnable(true);
+            depthStencil.depthCompareOp(VK_COMPARE_OP_LESS);
+            depthStencil.depthBoundsTestEnable(false);
+            depthStencil.minDepthBounds(0.0f);
+            depthStencil.maxDepthBounds(1.0f);
+            depthStencil.stencilTestEnable(false);
+
             // ===> COLOR BLENDING <===
             VkPipelineColorBlendAttachmentState.Buffer colorBlendAttachment = VkPipelineColorBlendAttachmentState.calloc(1, stack);
             colorBlendAttachment.colorWriteMask(VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT);
@@ -1106,6 +1131,7 @@ public class Application {
             pipelineInfo.pViewportState(viewportState);
             pipelineInfo.pRasterizationState(rasterizer);
             pipelineInfo.pMultisampleState(multisampling);
+            pipelineInfo.pDepthStencilState(depthStencil);
             pipelineInfo.pColorBlendState(colorBlending);
             pipelineInfo.layout(pipelineLayout);
             pipelineInfo.renderPass(renderPass);
@@ -1150,7 +1176,11 @@ public class Application {
 
     private void createRenderPass() {
         try (MemoryStack stack = stackPush()) {
-            VkAttachmentDescription.Buffer colorAttachment = VkAttachmentDescription.calloc(1, stack);
+            VkAttachmentDescription.Buffer attachments = VkAttachmentDescription.calloc(2, stack);
+            VkAttachmentReference.Buffer attachmentRefs = VkAttachmentReference.calloc(2, stack);
+
+            // Color attachments
+            VkAttachmentDescription colorAttachment = attachments.get(0);
             colorAttachment.format(swapChainImageFormat);
             colorAttachment.samples(VK_SAMPLE_COUNT_1_BIT);
             colorAttachment.loadOp(VK_ATTACHMENT_LOAD_OP_CLEAR);
@@ -1160,14 +1190,32 @@ public class Application {
             colorAttachment.initialLayout(VK_IMAGE_LAYOUT_UNDEFINED);
             colorAttachment.finalLayout(VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
 
-            VkAttachmentReference.Buffer colorAttachmentRef = VkAttachmentReference.calloc(1, stack);
+            int y = attachments.get(0).samples();
+
+            VkAttachmentReference colorAttachmentRef = attachmentRefs.get(0);
             colorAttachmentRef.attachment(0);
             colorAttachmentRef.layout(VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+
+            // Depth-Stencil Attachments
+            VkAttachmentDescription depthAttachment = attachments.get(1);
+            depthAttachment.format(findDepthFormat());
+            depthAttachment.samples(VK_SAMPLE_COUNT_1_BIT);
+            depthAttachment.loadOp(VK_ATTACHMENT_LOAD_OP_CLEAR);
+            depthAttachment.storeOp(VK_ATTACHMENT_STORE_OP_DONT_CARE);
+            depthAttachment.stencilLoadOp(VK_ATTACHMENT_LOAD_OP_DONT_CARE);
+            depthAttachment.stencilStoreOp(VK_ATTACHMENT_STORE_OP_DONT_CARE);
+            depthAttachment.initialLayout(VK_IMAGE_LAYOUT_UNDEFINED);
+            depthAttachment.finalLayout(VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
+
+            VkAttachmentReference depthAttachmentRef = attachmentRefs.get(1);
+            depthAttachmentRef.attachment(1);
+            depthAttachmentRef.layout(VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
 
             VkSubpassDescription.Buffer subpass = VkSubpassDescription.calloc(1, stack);
             subpass.pipelineBindPoint(VK_PIPELINE_BIND_POINT_GRAPHICS);
             subpass.colorAttachmentCount(1);
-            subpass.pColorAttachments(colorAttachmentRef);
+            subpass.pColorAttachments(VkAttachmentReference.calloc(1, stack).put(0, colorAttachmentRef));
+            subpass.pDepthStencilAttachment(depthAttachmentRef);
 
             VkSubpassDependency.Buffer dependency = VkSubpassDependency.calloc(1, stack);
             dependency.srcSubpass(VK_SUBPASS_EXTERNAL);
@@ -1179,7 +1227,7 @@ public class Application {
 
             VkRenderPassCreateInfo renderPassInfo = VkRenderPassCreateInfo.callocStack(stack);
             renderPassInfo.sType(VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO);
-            renderPassInfo.pAttachments(colorAttachment);
+            renderPassInfo.pAttachments(attachments);
             renderPassInfo.pSubpasses(subpass);
             renderPassInfo.pDependencies(dependency);
 
@@ -1197,7 +1245,7 @@ public class Application {
         swapChainFramebuffers = new ArrayList<>(swapChainImageViews.size());
 
         try (MemoryStack stack = stackPush()) {
-            LongBuffer attachments = stack.mallocLong(1);
+            LongBuffer attachments = stack.longs(VK_NULL_HANDLE, depthImageView);
             LongBuffer pFramebuffer = stack.mallocLong(1);
 
             VkFramebufferCreateInfo framebufferInfo = VkFramebufferCreateInfo.calloc(stack);
@@ -1224,7 +1272,7 @@ public class Application {
         try (MemoryStack stack = stackPush()) {
             QueueFamilyIndices queueFamilyIndices = findQueueFamilies(physicalDevice);
 
-            VkCommandPoolCreateInfo poolInfo = VkCommandPoolCreateInfo.calloc(stack);
+            VkCommandPoolCreateInfo poolInfo = VkCommandPoolCreateInfo.callocStack(stack);
             poolInfo.sType(VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO);
             poolInfo.queueFamilyIndex(queueFamilyIndices.graphicsFamily);
 
@@ -1269,8 +1317,11 @@ public class Application {
             renderArea.offset(VkOffset2D.callocStack(stack).set(0,0));
             renderArea.extent(swapChainExtent);
             renderPassInfo.renderArea(renderArea);
-            VkClearValue.Buffer clearValues = VkClearValue.callocStack(1, stack);
-            clearValues.color().float32(stack.floats(0.0f, 0.0f, 0.0f, 1.0f));
+
+            VkClearValue.Buffer clearValues = VkClearValue.callocStack(2, stack);
+            clearValues.get(0).color().float32(stack.floats(0.0f, 0.0f, 0.0f, 1.0f));
+            clearValues.get(1).depthStencil().set(1.0f, 0);
+
             renderPassInfo.pClearValues(clearValues);
 
             for (int i = 0; i < commandBuffersCount; i++) {
@@ -1417,7 +1468,7 @@ public class Application {
 
     private void createDescriptorPool() {
         try (MemoryStack stack = stackPush()) {
-            VkDescriptorPoolSize.Buffer poolSizes = VkDescriptorPoolSize.calloc(2, stack);
+            VkDescriptorPoolSize.Buffer poolSizes = VkDescriptorPoolSize.callocStack(2, stack);
 
             VkDescriptorPoolSize uniformBufferPoolSize = poolSizes.get(0);
             uniformBufferPoolSize.type(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
@@ -1450,7 +1501,7 @@ public class Application {
                 layouts.put(i, descriptorSetLayout);
             }
 
-            VkDescriptorSetAllocateInfo allocInfo = VkDescriptorSetAllocateInfo.calloc(stack);
+            VkDescriptorSetAllocateInfo allocInfo = VkDescriptorSetAllocateInfo.callocStack(stack);
             allocInfo.sType(VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO);
             allocInfo.descriptorPool(descriptorPool);
             allocInfo.pSetLayouts(layouts);
@@ -1463,16 +1514,16 @@ public class Application {
 
             descriptorSets = new ArrayList<>(pDescriptorSets.capacity());
 
-            VkDescriptorBufferInfo.Buffer bufferInfo = VkDescriptorBufferInfo.calloc(1, stack);
+            VkDescriptorBufferInfo.Buffer bufferInfo = VkDescriptorBufferInfo.callocStack(1, stack);
             bufferInfo.offset(0);
             bufferInfo.range(UniformBufferObject.SIZEOF);
 
-            VkDescriptorImageInfo.Buffer imageInfo = VkDescriptorImageInfo.calloc(1, stack);
+            VkDescriptorImageInfo.Buffer imageInfo = VkDescriptorImageInfo.callocStack(1, stack);
             imageInfo.imageLayout(VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
             imageInfo.imageView(textureImageView);
             imageInfo.sampler(textureSampler);
 
-            VkWriteDescriptorSet.Buffer descriptorWrites = VkWriteDescriptorSet.calloc(2, stack);
+            VkWriteDescriptorSet.Buffer descriptorWrites = VkWriteDescriptorSet.callocStack(2, stack);
 
             VkWriteDescriptorSet uboDescriptorWrite = descriptorWrites.get(0);
             uboDescriptorWrite.sType(VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET);
@@ -1554,7 +1605,7 @@ public class Application {
     }
 
     private void createTextureImageView() {
-        textureImageView = createImageView(textureImage, VK_FORMAT_R8G8B8A8_SRGB);
+        textureImageView = createImageView(textureImage, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_ASPECT_COLOR_BIT);
     }
 
     private void createTextureSampler() {
@@ -1621,14 +1672,14 @@ public class Application {
         }
     }
 
-    private long createImageView(long image, int format) {
+    private long createImageView(long image, int format, int aspectFlags) {
         try (MemoryStack stack = stackPush()) {
             VkImageViewCreateInfo viewInfo = VkImageViewCreateInfo.calloc(stack);
             viewInfo.sType(VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO);
             viewInfo.image(image);
             viewInfo.viewType(VK_IMAGE_VIEW_TYPE_2D);
             viewInfo.format(format);
-            viewInfo.subresourceRange().aspectMask(VK_IMAGE_ASPECT_COLOR_BIT);
+            viewInfo.subresourceRange().aspectMask(aspectFlags);
             viewInfo.subresourceRange().baseMipLevel(0);
             viewInfo.subresourceRange().levelCount(1);
             viewInfo.subresourceRange().baseArrayLayer(0);
@@ -1653,11 +1704,21 @@ public class Application {
             barrier.srcQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED);
             barrier.dstQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED);
             barrier.image(image);
-            barrier.subresourceRange().aspectMask(VK_IMAGE_ASPECT_COLOR_BIT);
+
             barrier.subresourceRange().baseMipLevel(0);
             barrier.subresourceRange().levelCount(1);
             barrier.subresourceRange().baseArrayLayer(0);
             barrier.subresourceRange().layerCount(1);
+
+            if (newLayout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL) {
+                barrier.subresourceRange().aspectMask(VK_IMAGE_ASPECT_DEPTH_BIT);
+
+                if (hasStencilComponent(format)) {
+                    barrier.subresourceRange().aspectMask(barrier.subresourceRange().aspectMask() | VK_IMAGE_ASPECT_STENCIL_BIT);
+                }
+            } else {
+                barrier.subresourceRange().aspectMask(VK_IMAGE_ASPECT_COLOR_BIT);
+            }
 
             int sourceStage;
             int destinationStage;
@@ -1670,12 +1731,18 @@ public class Application {
                 destinationStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
             } else if (oldLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL && newLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {
                 barrier.srcAccessMask(VK_ACCESS_TRANSFER_WRITE_BIT);
-                barrier.dstAccessMask(VK_ACCESS_SHADER_READ_BIT);
+                barrier.dstAccessMask(VK_ACCESS_TRANSFER_READ_BIT);
 
                 sourceStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
                 destinationStage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+            } else if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED && newLayout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL) {
+                barrier.srcAccessMask(0);
+                barrier.dstAccessMask(VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT);
+
+                sourceStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+                destinationStage = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
             } else {
-                throw new IllegalArgumentException("Unsupported layout transition");
+                throw  new IllegalArgumentException("Unsupported layout transition");
             }
 
             VkCommandBuffer commandBuffer = beginSingleTimeCommands();
@@ -1704,6 +1771,52 @@ public class Application {
 
             endSingleTimeCommands(commandBuffer);
         }
+    }
+
+    private void createDepthResources() {
+        try (MemoryStack stack = stackPush()) {
+            int depthFormat = findDepthFormat();
+
+            LongBuffer pDepthImage = stack.mallocLong(1);
+            LongBuffer pDepthImageMemory = stack.mallocLong(1);
+
+            createImage(swapChainExtent.width(), swapChainExtent.height(), depthFormat, VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, pDepthImage, pDepthImageMemory);
+
+            depthImage = pDepthImage.get(0);
+            depthImageMemory = pDepthImageMemory.get(0);
+
+            depthImageView = createImageView(depthImage, depthFormat, VK_IMAGE_ASPECT_DEPTH_BIT);
+
+            transitionImageLayout(depthImage, depthFormat, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
+        }
+    }
+
+    private int findSupportedFormat(IntBuffer formatCandidates, int tiling, int features) {
+        try (MemoryStack stack = stackPush()) {
+            VkFormatProperties props = VkFormatProperties.calloc(stack);
+
+            for (int i = 0; i < formatCandidates.capacity(); i++) {
+                int format = formatCandidates.get(i);
+
+                vkGetPhysicalDeviceFormatProperties(physicalDevice, format, props);
+
+                if (tiling == VK_IMAGE_TILING_LINEAR && (props.linearTilingFeatures() & features) == features) {
+                    return format;
+                } else if (tiling == VK_IMAGE_TILING_OPTIMAL && (props.optimalTilingFeatures() & features) == features) {
+                    return format;
+                }
+            }
+        }
+
+        throw new RuntimeException("Failed to find supported format");
+    }
+
+    private int findDepthFormat() {
+        return findSupportedFormat(stackGet().ints(VK_FORMAT_D32_SFLOAT, VK_FORMAT_D32_SFLOAT_S8_UINT, VK_FORMAT_D24_UNORM_S8_UINT), VK_IMAGE_TILING_OPTIMAL, VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT);
+    }
+
+    private boolean hasStencilComponent(int format) {
+        return format == VK_FORMAT_D32_SFLOAT_S8_UINT || format == VK_FORMAT_D24_UNORM_S8_UINT;
     }
 
     //TODO Chapter 26 of Java Vulkan Tutorial: Just finished 25!
