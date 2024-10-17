@@ -20,6 +20,8 @@ import org.lwjgl.system.MemoryStack;
 import org.lwjgl.system.Pointer;
 import org.lwjgl.vulkan.*;
 
+import javax.swing.text.html.ImageView;
+
 import static java.util.stream.Collectors.toSet;
 import static org.lwjgl.glfw.GLFW.*;
 import static org.lwjgl.stb.STBImage.stbi_load;
@@ -46,8 +48,8 @@ public class Application {
     private static final int UINT32_MAX = 0xFFFFFFFF;
     private static final long UINT64_MAX = 0xFFFFFFFFFFFFFFFFL;
 
-        private static final int WIDTH = 800;
-        private static final int HEIGHT = 600;
+    private static final int WIDTH = 800;
+    private static final int HEIGHT = 600;
 
     private static final int MAX_FRAMES_IN_FLIGHT = 2;
 
@@ -188,6 +190,7 @@ public class Application {
     private long surface;
 
     private VkPhysicalDevice physicalDevice;
+    private int msaaSamples = VK_SAMPLE_COUNT_1_BIT;
     private VkDevice device;
 
     private VkQueue graphicsQueue;
@@ -208,6 +211,10 @@ public class Application {
     private long graphicsPipeline;
 
     private long commandPool;
+
+    private long colorImage;
+    private long colorImageMemory;
+    private long colorImageView;
 
     private long depthImage;
     private long depthImageMemory;
@@ -292,6 +299,10 @@ public class Application {
     }
 
     private void cleanupSwapChain() {
+        vkDestroyImageView(device, colorImageView, null);
+        vkDestroyImage(device, colorImage, null);
+        vkFreeMemory(device, colorImageMemory, null);
+
         vkDestroyImageView(device, depthImageView, null);
         vkDestroyImage(device, depthImage, null);
         vkFreeMemory(device, depthImageMemory, null);
@@ -372,6 +383,7 @@ public class Application {
         createImageViews();
         createRenderPass();
         createGraphicsPipeline();
+        createColorResources();
         createDepthResources();
         createFramebuffers();
         createUniformBuffers();
@@ -475,13 +487,14 @@ public class Application {
 
                 if (isDeviceSuitable(device)){
                     physicalDevice = device;
+                    msaaSamples = getMaxUsableSampleCount();
                     return;
                 }
             }
 
             throw new RuntimeException("Failed to find a suitable GPU");
         }
-    }
+    } //normal for now
 
     private void createLogicalDevice() {
         try (MemoryStack stack = stackPush()) {
@@ -499,6 +512,8 @@ public class Application {
 
             VkPhysicalDeviceFeatures deviceFeatures = VkPhysicalDeviceFeatures.calloc(stack);
             deviceFeatures.samplerAnisotropy(true);
+            deviceFeatures.sampleRateShading(true);
+
             VkDeviceCreateInfo createInfo = VkDeviceCreateInfo.calloc(stack);
 
             createInfo.sType(VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO);
@@ -602,13 +617,13 @@ public class Application {
 
     private void createRenderPass() {
         try (MemoryStack stack = stackPush()) {
-            VkAttachmentDescription.Buffer attachments = VkAttachmentDescription.calloc(2, stack);
-            VkAttachmentReference.Buffer attachmentRefs = VkAttachmentReference.calloc(2, stack);
+            VkAttachmentDescription.Buffer attachments = VkAttachmentDescription.calloc(3, stack);
+            VkAttachmentReference.Buffer attachmentRefs = VkAttachmentReference.calloc(3, stack);
 
             // Color attachments
             VkAttachmentDescription colorAttachment = attachments.get(0);
             colorAttachment.format(swapChainImageFormat);
-            colorAttachment.samples(VK_SAMPLE_COUNT_1_BIT);
+            colorAttachment.samples(msaaSamples);
             colorAttachment.loadOp(VK_ATTACHMENT_LOAD_OP_CLEAR);
             colorAttachment.storeOp(VK_ATTACHMENT_STORE_OP_STORE);
             colorAttachment.stencilLoadOp(VK_ATTACHMENT_LOAD_OP_DONT_CARE);
@@ -620,10 +635,25 @@ public class Application {
             colorAttachmentRef.attachment(0);
             colorAttachmentRef.layout(VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
 
+            // Present Image
+            VkAttachmentDescription colorAttachmentResolve = attachments.get(2);
+            colorAttachmentResolve.format(swapChainImageFormat);
+            colorAttachmentResolve.samples(VK_SAMPLE_COUNT_1_BIT);
+            colorAttachmentResolve.loadOp(VK_ATTACHMENT_LOAD_OP_DONT_CARE);
+            colorAttachmentResolve.storeOp(VK_ATTACHMENT_STORE_OP_STORE);
+            colorAttachmentResolve.stencilLoadOp(VK_ATTACHMENT_LOAD_OP_DONT_CARE);
+            colorAttachmentResolve.stencilStoreOp(VK_ATTACHMENT_STORE_OP_DONT_CARE);
+            colorAttachmentResolve.initialLayout(VK_IMAGE_LAYOUT_UNDEFINED);
+            colorAttachmentResolve.finalLayout(VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
+
+            VkAttachmentReference colorAttachmentResolveRef = attachmentRefs.get(2);
+            colorAttachmentResolveRef.attachment(2);
+            colorAttachmentResolveRef.layout(VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+
             // Depth-Stencil Attachments
             VkAttachmentDescription depthAttachment = attachments.get(1);
             depthAttachment.format(findDepthFormat());
-            depthAttachment.samples(VK_SAMPLE_COUNT_1_BIT);
+            depthAttachment.samples(msaaSamples);
             depthAttachment.loadOp(VK_ATTACHMENT_LOAD_OP_CLEAR);
             depthAttachment.storeOp(VK_ATTACHMENT_STORE_OP_DONT_CARE);
             depthAttachment.stencilLoadOp(VK_ATTACHMENT_LOAD_OP_DONT_CARE);
@@ -640,6 +670,7 @@ public class Application {
             subpass.colorAttachmentCount(1);
             subpass.pColorAttachments(VkAttachmentReference.calloc(1, stack).put(0, colorAttachmentRef));
             subpass.pDepthStencilAttachment(depthAttachmentRef);
+            subpass.pResolveAttachments(VkAttachmentReference.calloc(1, stack).put(0, colorAttachmentResolveRef));
 
             VkSubpassDependency.Buffer dependency = VkSubpassDependency.calloc(1, stack);
             dependency.srcSubpass(VK_SUBPASS_EXTERNAL);
@@ -766,8 +797,9 @@ public class Application {
             // ===> MULTISAMPLING <===
             VkPipelineMultisampleStateCreateInfo multisampling = VkPipelineMultisampleStateCreateInfo.calloc(stack);
             multisampling.sType(VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO);
-            multisampling.sampleShadingEnable(false);
-            multisampling.rasterizationSamples(VK_SAMPLE_COUNT_1_BIT);
+            multisampling.sampleShadingEnable(true);
+            multisampling.minSampleShading(0.2f);
+            multisampling.rasterizationSamples(msaaSamples);
 
             VkPipelineDepthStencilStateCreateInfo depthStencil = VkPipelineDepthStencilStateCreateInfo.calloc(stack);
             depthStencil.sType(VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO);
@@ -842,7 +874,7 @@ public class Application {
         swapChainFramebuffers = new ArrayList<>(swapChainImageViews.size());
 
         try (MemoryStack stack = stackPush()) {
-            LongBuffer attachments = stack.longs(VK_NULL_HANDLE, depthImageView);
+            LongBuffer attachments = stack.longs(colorImageView, depthImageView, VK_NULL_HANDLE);
             LongBuffer pFramebuffer = stack.mallocLong(1);
 
             VkFramebufferCreateInfo framebufferInfo = VkFramebufferCreateInfo.calloc(stack);
@@ -853,7 +885,7 @@ public class Application {
             framebufferInfo.layers(1);
 
             for (long imageView : swapChainImageViews) {
-                attachments.put(0, imageView);
+                attachments.put(2, imageView);
                 framebufferInfo.pAttachments(attachments);
 
                 if (vkCreateFramebuffer(device, framebufferInfo, null, pFramebuffer) != VK_SUCCESS) {
@@ -862,6 +894,30 @@ public class Application {
 
                 swapChainFramebuffers.add(pFramebuffer.get(0));
             }
+        }
+    }
+
+    private void createColorResources() {
+        try (MemoryStack stack = stackPush()) {
+            LongBuffer pColorImage = stack.mallocLong(1);
+            LongBuffer pColorImageMemory = stack.mallocLong(1);
+
+            createImage(swapChainExtent.width(), swapChainExtent.height(),
+                    1,
+                    msaaSamples,
+                    swapChainImageFormat,
+                    VK_IMAGE_TILING_OPTIMAL,
+                    VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+                    VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                    pColorImage,
+                    pColorImageMemory);
+
+            colorImage = pColorImage.get(0);
+            colorImageMemory = pColorImageMemory.get(0);
+
+            colorImageView = createImageView(colorImage, swapChainImageFormat, VK_IMAGE_ASPECT_COLOR_BIT, 1);
+
+            transitionImageLayout(colorImage, swapChainImageFormat, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, 1);
         }
     }
 
@@ -890,7 +946,7 @@ public class Application {
             LongBuffer pDepthImage = stack.mallocLong(1);
             LongBuffer pDepthImageMemory = stack.mallocLong(1);
 
-            createImage(swapChainExtent.width(), swapChainExtent.height(), 1, depthFormat, VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, pDepthImage, pDepthImageMemory);
+            createImage(swapChainExtent.width(), swapChainExtent.height(), 1, msaaSamples, depthFormat, VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, pDepthImage, pDepthImageMemory);
 
             depthImage = pDepthImage.get(0);
             depthImageMemory = pDepthImageMemory.get(0);
@@ -966,7 +1022,13 @@ public class Application {
 
             LongBuffer pTextureImage = stack.mallocLong(1);
             LongBuffer pTextureImageMemory = stack.mallocLong(1);
-            createImage(pWidth.get(0), pHeight.get(0), mipLevels, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, pTextureImage, pTextureImageMemory);
+            createImage(pWidth.get(0), pHeight.get(0),
+                    mipLevels,
+                    VK_SAMPLE_COUNT_1_BIT, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_TILING_OPTIMAL,
+                    VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+                    VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                    pTextureImage,
+                    pTextureImageMemory);
 
             textureImage = pTextureImage.get(0);
             textureImageMemory = pTextureImageMemory.get(0);
@@ -975,7 +1037,7 @@ public class Application {
 
             copyBufferToImage(pStagingBuffer.get(0), textureImage, pWidth.get(0), pHeight.get(0));
 
-             generateMipmaps(textureImage, VK_FORMAT_R8G8B8A8_SRGB, pWidth.get(0), pHeight.get(0), mipLevels);
+            generateMipmaps(textureImage, VK_FORMAT_R8G8B8A8_SRGB, pWidth.get(0), pHeight.get(0), mipLevels);
 
             vkDestroyBuffer(device, pStagingBuffer.get(0), null);
             vkFreeMemory(device, pStagingBufferMemory.get(0), null);
@@ -1078,6 +1140,36 @@ public class Application {
         }
     }
 
+    private int getMaxUsableSampleCount() {
+        try (MemoryStack stack = MemoryStack.stackPush()) {
+            VkPhysicalDeviceProperties physicalDeviceProperties = VkPhysicalDeviceProperties.malloc(stack);
+            vkGetPhysicalDeviceProperties(physicalDevice, physicalDeviceProperties);
+
+            int sampleCountFlags = physicalDeviceProperties.limits().framebufferColorSampleCounts() & physicalDeviceProperties.limits().framebufferDepthSampleCounts();
+
+            if ((sampleCountFlags & VK_SAMPLE_COUNT_64_BIT) != 0) {
+                return VK_SAMPLE_COUNT_64_BIT;
+            }
+            if ((sampleCountFlags & VK_SAMPLE_COUNT_32_BIT) != 0) {
+                return VK_SAMPLE_COUNT_32_BIT;
+            }
+            if ((sampleCountFlags & VK_SAMPLE_COUNT_16_BIT) != 0) {
+                return VK_SAMPLE_COUNT_16_BIT;
+            }
+            if ((sampleCountFlags & VK_SAMPLE_COUNT_8_BIT) != 0) {
+                return VK_SAMPLE_COUNT_8_BIT;
+            }
+            if ((sampleCountFlags & VK_SAMPLE_COUNT_4_BIT) != 0) {
+                return VK_SAMPLE_COUNT_4_BIT;
+            }
+            if ((sampleCountFlags & VK_SAMPLE_COUNT_2_BIT) != 0) {
+                return VK_SAMPLE_COUNT_2_BIT;
+            }
+
+            return VK_SAMPLE_COUNT_1_BIT;
+        }
+    }
+
     private void createTextureImageView() {
         textureImageView = createImageView(textureImage, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_ASPECT_COLOR_BIT, mipLevels);
     }
@@ -1135,7 +1227,7 @@ public class Application {
         }
     }
 
-    private void createImage(int width, int height, int mipLevels, int format, int tiling, int usage, int memProperties, LongBuffer pTextureImage, LongBuffer pTextureImageMemory) {
+    private void createImage(int width, int height, int mipLevels, int numSamples, int format, int tiling, int usage, int memProperties, LongBuffer pTextureImage, LongBuffer pTextureImageMemory) {
         try (MemoryStack stack = stackPush()) {
             VkImageCreateInfo imageInfo = VkImageCreateInfo.calloc(stack);
             imageInfo.sType(VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO);
@@ -1149,7 +1241,7 @@ public class Application {
             imageInfo.tiling(tiling);
             imageInfo.initialLayout(VK_IMAGE_LAYOUT_UNDEFINED);
             imageInfo.usage(usage);
-            imageInfo.samples(VK_SAMPLE_COUNT_1_BIT);
+            imageInfo.samples(numSamples);
             imageInfo.sharingMode(VK_SHARING_MODE_EXCLUSIVE);
 
             if (vkCreateImage(device, imageInfo, null, pTextureImage) != VK_SUCCESS){
@@ -1218,6 +1310,12 @@ public class Application {
 
                 sourceStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
                 destinationStage = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+            } else if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED && newLayout == VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL) {
+                barrier.srcAccessMask(0);
+                barrier.dstAccessMask(VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT);
+
+                sourceStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+                destinationStage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
             } else {
                 throw new IllegalArgumentException("Unsupported layout transition");
             }
@@ -1668,7 +1766,7 @@ public class Application {
         try (MemoryStack stack = stackPush()) {
             UniformBufferObject ubo = new UniformBufferObject();
 
-                ubo.model.rotate((float) (glfwGetTime() * Math.toRadians(90)), 0.0f, 0.0f, 1.0f);
+            ubo.model.rotate((float) ((glfwGetTime()) * Math.toRadians(90)), 0.0f, 0.0f, 1.0f);
             ubo.view.lookAt(2.0f, 2.0f, 2.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f);
             ubo.proj.perspective((float) Math.toRadians(45), (float) swapChainExtent.width() / (float) swapChainExtent.height(), 0.1f, 10.0f);
             ubo.proj.m11(ubo.proj.m11() * -1);
