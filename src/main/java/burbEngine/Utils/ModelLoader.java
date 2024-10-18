@@ -1,4 +1,4 @@
-package burbEngine;
+package burbEngine.Utils;
 
 import org.joml.Vector2f;
 import org.joml.Vector2fc;
@@ -6,7 +6,6 @@ import org.joml.Vector3f;
 import org.joml.Vector3fc;
 import org.lwjgl.PointerBuffer;
 import org.lwjgl.assimp.*;
-import org.w3c.dom.Node;
 
 import java.io.File;
 import java.nio.IntBuffer;

@@ -12,6 +12,16 @@ import java.util.*;
 import java.util.List;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
+import static java.util.stream.Collectors.toSet;
+
+import burbEngine.Utils.Frame;
+import burbEngine.Utils.ModelLoader;
+import static burbEngine.Utils.ShaderSPIRVUtils.*;
+import static burbEngine.Utils.ShaderSPIRVUtils.ShaderKind.FRAGMENT_SHADER;
+import static burbEngine.Utils.ShaderSPIRVUtils.ShaderKind.VERTEX_SHADER;
+import static burbEngine.Utils.AlignmentUtils.alignas;
+import static burbEngine.Utils.AlignmentUtils.alignof;
+import static burbEngine.Utils.ModelLoader.*;
 
 import org.joml.*;
 
@@ -19,10 +29,6 @@ import org.lwjgl.PointerBuffer;
 import org.lwjgl.system.MemoryStack;
 import org.lwjgl.system.Pointer;
 import org.lwjgl.vulkan.*;
-
-import javax.swing.text.html.ImageView;
-
-import static java.util.stream.Collectors.toSet;
 import static org.lwjgl.glfw.GLFW.*;
 import static org.lwjgl.stb.STBImage.stbi_load;
 import static org.lwjgl.system.Configuration.DEBUG;
@@ -36,12 +42,7 @@ import static org.lwjgl.vulkan.VK13.*;
 import static org.lwjgl.stb.STBImage.*;
 import static org.lwjgl.assimp.Assimp.*;
 import static java.lang.ClassLoader.getSystemClassLoader;
-import static burbEngine.ShaderSPIRVUtils.*;
-import static burbEngine.ShaderSPIRVUtils.ShaderKind.FRAGMENT_SHADER;
-import static burbEngine.ShaderSPIRVUtils.ShaderKind.VERTEX_SHADER;
-import static burbEngine.AlignmentUtils.alignas;
-import static burbEngine.AlignmentUtils.alignof;
-import static burbEngine.ModelLoader.*;
+
 
 public class Application {
 
@@ -1340,7 +1341,7 @@ public class Application {
             region.imageSubresource().baseArrayLayer(0);
             region.imageSubresource().layerCount(1);
             region.imageOffset().set(0,0,0);
-            region.imageExtent(VkExtent3D.callocStack(stack).set(width, height, 1));
+            region.imageExtent(VkExtent3D.calloc(stack).set(width, height, 1));
 
             vkCmdCopyBufferToImage(commandBuffer, buffer, image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, region);
 
@@ -1454,7 +1455,7 @@ public class Application {
 
     private void createDescriptorPool() {
         try (MemoryStack stack = stackPush()) {
-            VkDescriptorPoolSize.Buffer poolSizes = VkDescriptorPoolSize.callocStack(2, stack);
+            VkDescriptorPoolSize.Buffer poolSizes = VkDescriptorPoolSize.calloc(2, stack);
 
             VkDescriptorPoolSize uniformBufferPoolSize = poolSizes.get(0);
             uniformBufferPoolSize.type(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
@@ -1464,7 +1465,7 @@ public class Application {
             textureSamplerPoolSize.type(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
             textureSamplerPoolSize.descriptorCount(swapChainImages.size());
 
-                VkDescriptorPoolCreateInfo poolInfo = VkDescriptorPoolCreateInfo.callocStack(stack);
+                VkDescriptorPoolCreateInfo poolInfo = VkDescriptorPoolCreateInfo.calloc(stack);
             poolInfo.sType(VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO);
             poolInfo.pPoolSizes(poolSizes);
             poolInfo.maxSets(swapChainImages.size());
@@ -1486,7 +1487,7 @@ public class Application {
                 layouts.put(i, descriptorSetLayout);
             }
 
-            VkDescriptorSetAllocateInfo allocInfo = VkDescriptorSetAllocateInfo.callocStack(stack);
+            VkDescriptorSetAllocateInfo allocInfo = VkDescriptorSetAllocateInfo.calloc(stack);
             allocInfo.sType(VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO);
             allocInfo.descriptorPool(descriptorPool);
             allocInfo.pSetLayouts(layouts);
@@ -1499,16 +1500,16 @@ public class Application {
 
             descriptorSets = new ArrayList<>(pDescriptorSets.capacity());
 
-            VkDescriptorBufferInfo.Buffer bufferInfo = VkDescriptorBufferInfo.callocStack(1, stack);
+            VkDescriptorBufferInfo.Buffer bufferInfo = VkDescriptorBufferInfo.calloc(1, stack);
             bufferInfo.offset(0);
             bufferInfo.range(UniformBufferObject.SIZEOF);
 
-            VkDescriptorImageInfo.Buffer imageInfo = VkDescriptorImageInfo.callocStack(1, stack);
+            VkDescriptorImageInfo.Buffer imageInfo = VkDescriptorImageInfo.calloc(1, stack);
             imageInfo.imageLayout(VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
             imageInfo.imageView(textureImageView);
             imageInfo.sampler(textureSampler);
 
-            VkWriteDescriptorSet.Buffer descriptorWrites = VkWriteDescriptorSet.callocStack(2, stack);
+            VkWriteDescriptorSet.Buffer descriptorWrites = VkWriteDescriptorSet.calloc(2, stack);
 
             VkWriteDescriptorSet uboDescriptorWrite = descriptorWrites.get(0);
             uboDescriptorWrite.sType(VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET);
@@ -1543,7 +1544,7 @@ public class Application {
     private void createBuffer(long size, int usage, int properties, LongBuffer pBuffer, LongBuffer pBufferMemory) {
         try (MemoryStack stack = stackPush()) {
 
-            VkBufferCreateInfo bufferInfo = VkBufferCreateInfo.callocStack(stack);
+            VkBufferCreateInfo bufferInfo = VkBufferCreateInfo.calloc(stack);
             bufferInfo.sType(VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO);
             bufferInfo.size(size);
             bufferInfo.usage(usage);
@@ -1556,7 +1557,7 @@ public class Application {
             VkMemoryRequirements memRequirements = VkMemoryRequirements.malloc(stack);
             vkGetBufferMemoryRequirements(device, pBuffer.get(0), memRequirements);
 
-            VkMemoryAllocateInfo allocInfo = VkMemoryAllocateInfo.callocStack(stack);
+            VkMemoryAllocateInfo allocInfo = VkMemoryAllocateInfo.calloc(stack);
             allocInfo.sType(VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO);
             allocInfo.allocationSize(memRequirements.size());
             allocInfo.memoryTypeIndex(findMemoryType(stack, memRequirements.memoryTypeBits(), properties));
@@ -1571,7 +1572,7 @@ public class Application {
 
     private VkCommandBuffer beginSingleTimeCommands() {
         try (MemoryStack stack = stackPush()) {
-            VkCommandBufferAllocateInfo allocInfo = VkCommandBufferAllocateInfo.callocStack(stack);
+            VkCommandBufferAllocateInfo allocInfo = VkCommandBufferAllocateInfo.calloc(stack);
             allocInfo.sType(VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO);
             allocInfo.level(VK_COMMAND_BUFFER_LEVEL_PRIMARY);
             allocInfo.commandPool(commandPool);
@@ -1581,7 +1582,7 @@ public class Application {
             vkAllocateCommandBuffers(device, allocInfo, pCommandBuffer);
             VkCommandBuffer commandBuffer = new VkCommandBuffer(pCommandBuffer.get(0), device);
 
-            VkCommandBufferBeginInfo beginInfo = VkCommandBufferBeginInfo.callocStack(stack);
+            VkCommandBufferBeginInfo beginInfo = VkCommandBufferBeginInfo.calloc(stack);
             beginInfo.sType(VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO);
             beginInfo.flags(VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
 
@@ -1595,7 +1596,7 @@ public class Application {
         try (MemoryStack stack = stackPush()) {
             vkEndCommandBuffer(commandBuffer);
 
-            VkSubmitInfo.Buffer submitInfo = VkSubmitInfo.callocStack(1, stack);
+            VkSubmitInfo.Buffer submitInfo = VkSubmitInfo.calloc(1, stack);
             submitInfo.sType(VK_STRUCTURE_TYPE_SUBMIT_INFO);
             submitInfo.pCommandBuffers(stack.pointers(commandBuffer));
 
@@ -1610,7 +1611,7 @@ public class Application {
         try (MemoryStack stack = stackPush()) {
             VkCommandBuffer commandBuffer = beginSingleTimeCommands();
 
-            VkBufferCopy.Buffer copyRegion = VkBufferCopy.callocStack(1, stack);
+            VkBufferCopy.Buffer copyRegion = VkBufferCopy.calloc(1, stack);
             copyRegion.size(size);
 
             vkCmdCopyBuffer(commandBuffer, srcBuffer, dstBuffer, copyRegion);
@@ -1669,7 +1670,7 @@ public class Application {
 
         try (MemoryStack stack = stackPush()) {
 
-                VkCommandBufferAllocateInfo allocInfo = VkCommandBufferAllocateInfo.callocStack(stack);
+                VkCommandBufferAllocateInfo allocInfo = VkCommandBufferAllocateInfo.calloc(stack);
             allocInfo.sType(VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO);
             allocInfo.commandPool(commandPool);
             allocInfo.level(VK_COMMAND_BUFFER_LEVEL_PRIMARY);
@@ -1685,18 +1686,18 @@ public class Application {
                 commandBuffers.add(new VkCommandBuffer(pCommandBuffers.get(i), device));
             }
 
-                VkCommandBufferBeginInfo beginInfo = VkCommandBufferBeginInfo.callocStack(stack);
+                VkCommandBufferBeginInfo beginInfo = VkCommandBufferBeginInfo.calloc(stack);
             beginInfo.sType(VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO);
 
-                VkRenderPassBeginInfo renderPassInfo = VkRenderPassBeginInfo.callocStack(stack);
+                VkRenderPassBeginInfo renderPassInfo = VkRenderPassBeginInfo.calloc(stack);
             renderPassInfo.sType(VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO);
             renderPassInfo.renderPass(renderPass);
-            VkRect2D renderArea = VkRect2D.callocStack(stack);
-            renderArea.offset(VkOffset2D.callocStack(stack).set(0,0));
+            VkRect2D renderArea = VkRect2D.calloc(stack);
+            renderArea.offset(VkOffset2D.calloc(stack).set(0,0));
             renderArea.extent(swapChainExtent);
             renderPassInfo.renderArea(renderArea);
 
-            VkClearValue.Buffer clearValues = VkClearValue.callocStack(2, stack);
+            VkClearValue.Buffer clearValues = VkClearValue.calloc(2, stack);
             clearValues.get(0).color().float32(stack.floats(0.0f, 0.0f, 0.0f, 1.0f));
             clearValues.get(1).depthStencil().set(1.0f, 0);
 
@@ -1739,10 +1740,10 @@ public class Application {
         imagesInFlight = new HashMap<>(swapChainImages.size());
 
         try (MemoryStack stack = stackPush()) {
-            VkSemaphoreCreateInfo semaphoreInfo = VkSemaphoreCreateInfo.callocStack(stack);
+            VkSemaphoreCreateInfo semaphoreInfo = VkSemaphoreCreateInfo.calloc(stack);
             semaphoreInfo.sType(VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO);
 
-            VkFenceCreateInfo fenceInfo = VkFenceCreateInfo.callocStack(stack);
+            VkFenceCreateInfo fenceInfo = VkFenceCreateInfo.calloc(stack);
             fenceInfo.sType(VK_STRUCTURE_TYPE_FENCE_CREATE_INFO);
             fenceInfo.flags(VK_FENCE_CREATE_SIGNALED_BIT);
 
@@ -1806,7 +1807,7 @@ public class Application {
 
             imagesInFlight.put(imageIndex, thisFrame);
 
-            VkSubmitInfo submitInfo = VkSubmitInfo.callocStack(stack);
+            VkSubmitInfo submitInfo = VkSubmitInfo.calloc(stack);
             submitInfo.sType(VK_STRUCTURE_TYPE_SUBMIT_INFO);
             submitInfo.waitSemaphoreCount(1);
             submitInfo.pWaitSemaphores(thisFrame.pImageAvailableSemaphore());
@@ -1822,7 +1823,7 @@ public class Application {
                 throw new RuntimeException("Failed to submit draw command buffer: " + vkResult);
             }
 
-            VkPresentInfoKHR presentInfo = VkPresentInfoKHR.callocStack(stack);
+            VkPresentInfoKHR presentInfo = VkPresentInfoKHR.calloc(stack);
             presentInfo.sType(VK_STRUCTURE_TYPE_PRESENT_INFO_KHR);
 
             presentInfo.pWaitSemaphores(thisFrame.pRenderFinishedSemaphore());
@@ -1847,7 +1848,7 @@ public class Application {
 
     private long createShaderModule(ByteBuffer spirvCode) {
         try (MemoryStack stack = stackPush()) {
-            VkShaderModuleCreateInfo createInfo = VkShaderModuleCreateInfo.callocStack(stack);
+            VkShaderModuleCreateInfo createInfo = VkShaderModuleCreateInfo.calloc(stack);
 
             createInfo.sType(VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO);
             createInfo.pCode(spirvCode);

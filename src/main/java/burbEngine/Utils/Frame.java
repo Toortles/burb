@@ -1,4 +1,4 @@
-package burbEngine;
+package burbEngine.Utils;
 
 import java.nio.LongBuffer;
 
