@@ -16,6 +16,7 @@ import static java.util.stream.Collectors.toSet;
 
 import burbEngine.Utils.Frame;
 import burbEngine.Utils.ModelLoader;
+import burbEngine.Components.*;
 import static burbEngine.Utils.ShaderSPIRVUtils.*;
 import static burbEngine.Utils.ShaderSPIRVUtils.ShaderKind.FRAGMENT_SHADER;
 import static burbEngine.Utils.ShaderSPIRVUtils.ShaderKind.VERTEX_SHADER;
@@ -45,6 +46,7 @@ import static java.lang.ClassLoader.getSystemClassLoader;
 
 
 public class Application {
+    Transform transform;
 
     private static final int UINT32_MAX = 0xFFFFFFFF;
     private static final long UINT64_MAX = 0xFFFFFFFFFFFFFFFFL;
@@ -127,7 +129,7 @@ public class Application {
         }
     }
 
-    private static class Vertex {
+    public static class Vertex {
         private static final int SIZEOF = (3 + 3 + 2) * Float.BYTES;
         private static final int OFFSETOF_POS = 0;
         private static final int OFFSETOF_COLOR = 3 * Float.BYTES;
@@ -246,6 +248,8 @@ public class Application {
     boolean framebufferResize;
 
     public void run() {
+        transform = new Transform();
+
         initWindow();
         initVulkan();
         mainLoop();
@@ -992,7 +996,7 @@ public class Application {
 
     private void createTextureImage() {
         try (MemoryStack stack = stackPush()) {
-            String filename = Paths.get(new URI(getSystemClassLoader().getResource("textures/chalet.png").toExternalForm())).toString();
+            String filename = Paths.get(new URI(getSystemClassLoader().getResource("textures/TeslaModelS_Base_Color.png").toExternalForm())).toString();
 
             IntBuffer pWidth = stack.mallocInt(1);
             IntBuffer pHeight = stack.mallocInt(1);
@@ -1356,7 +1360,7 @@ public class Application {
     }
 
     private void loadModel() {
-        File modelFile = new File(getSystemClassLoader().getResource("models/chalet.obj").getFile());
+        File modelFile = new File(getSystemClassLoader().getResource("models/suzanne.obj").getFile());
         Model model = ModelLoader.loadModel(modelFile, aiProcess_FlipUVs | aiProcess_DropNormals);
 
         final int vertexCount = model.positions.size();
@@ -1767,7 +1771,14 @@ public class Application {
         try (MemoryStack stack = stackPush()) {
             UniformBufferObject ubo = new UniformBufferObject();
 
-            ubo.model.rotate((float) ((glfwGetTime()) * Math.toRadians(90)), 0.0f, 0.0f, 1.0f);
+//            ubo.model.rotate((float) ((glfwGetTime()) * Math.toRadians(90)), 0.0f, 0.0f, 1.0f);
+            ubo.model.translate(transform.position);
+            transform.position.z = (float) Math.sin(glfwGetTime() * 2.5f) / 4.0f;
+            ubo.model.rotateXYZ(transform.rotation);
+            ubo.model.rotateX((float) Math.toRadians(90));
+            transform.rotation.z += 0.0005f;
+
+
             ubo.view.lookAt(2.0f, 2.0f, 2.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f);
             ubo.proj.perspective((float) Math.toRadians(45), (float) swapChainExtent.width() / (float) swapChainExtent.height(), 0.1f, 10.0f);
             ubo.proj.m11(ubo.proj.m11() * -1);
